@@ -24,6 +24,11 @@ class Settings {
         set { defaults.set(newValue, forKey: "autoStartEnabled") }
     }
     
+    var shouldStartAtLogin: Bool {
+        get { defaults.bool(forKey: "shouldStartAtLogin") }
+        set { defaults.set(newValue, forKey: "shouldStartAtLogin") }
+    }
+    
     func validateSettings() -> [String] {
         var errors: [String] = []
         

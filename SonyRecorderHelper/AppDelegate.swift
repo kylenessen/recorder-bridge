@@ -1,5 +1,6 @@
 import Cocoa
 import UserNotifications
+import ServiceManagement
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -7,11 +8,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarItem: NSStatusItem!
     private let settings = Settings()
     private var deviceMonitor: DeviceMonitor!
+    private var terminationObserver: NSObjectProtocol?
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
         setupDeviceMonitoring()
         requestNotificationPermissions()
+        setupLaunchAndPersistence()
         updateMenu()
         
         NSApp.setActivationPolicy(.accessory)
@@ -19,6 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ aNotification: Notification) {
         deviceMonitor.stopMonitoring()
+        cleanupPersistence()
     }
     
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -137,6 +141,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         newMenu.addItem(NSMenuItem.separator())
         
+        let loginItemsItem = NSMenuItem(title: getLoginItemsMenuTitle(), action: #selector(toggleLoginItem), keyEquivalent: "")
+        loginItemsItem.target = self
+        newMenu.addItem(loginItemsItem)
+        
+        newMenu.addItem(NSMenuItem.separator())
+        
         let quitItem = NSMenuItem(title: "Quit Sony Recorder Helper", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         newMenu.addItem(quitItem)
         
@@ -159,6 +169,188 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("Notification permissions denied")
             }
         }
+    }
+    
+    // MARK: - Launch & Persistence
+    
+    private func setupLaunchAndPersistence() {
+        setupBackgroundOperation()
+        setupAutoRestart()
+        
+        // Register login item if it's the first launch or user preference
+        if settings.shouldStartAtLogin && !isLoginItemRegistered() {
+            registerLoginItem()
+        }
+    }
+    
+    private func setupBackgroundOperation() {
+        // Prevent app from terminating when all windows are closed
+        NSApp.setActivationPolicy(.accessory)
+        
+        // Handle system sleep/wake cycles
+        let workspace = NSWorkspace.shared
+        let notificationCenter = workspace.notificationCenter
+        
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+    
+    private func setupAutoRestart() {
+        // Monitor for unexpected termination and setup restart mechanism
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: NSApp,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppTermination()
+        }
+    }
+    
+    private func cleanupPersistence() {
+        // Remove observers
+        if let observer = terminationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+    
+    @objc private func systemWillSleep() {
+        print("System going to sleep - pausing monitoring")
+        deviceMonitor.stopMonitoring()
+    }
+    
+    @objc private func systemDidWake() {
+        print("System woke up - resuming monitoring")
+        deviceMonitor.startMonitoring()
+    }
+    
+    private func handleAppTermination() {
+        // This could be expanded to implement restart logic if needed
+        print("App is terminating")
+    }
+    
+    // MARK: - Login Item Management
+    
+    @objc private func toggleLoginItem() {
+        if isLoginItemRegistered() {
+            unregisterLoginItem()
+        } else {
+            registerLoginItem()
+        }
+        updateMenu()
+    }
+    
+    private func getLoginItemsMenuTitle() -> String {
+        return isLoginItemRegistered() ? "Remove from Login Items" : "Add to Login Items"
+    }
+    
+    private func isLoginItemRegistered() -> Bool {
+        if #available(macOS 13.0, *) {
+            // Use modern SMAppService API for macOS 13+
+            guard Bundle.main.bundleIdentifier != nil else {
+                return false
+            }
+            let service = SMAppService.mainApp
+            return service.status == .enabled
+        } else {
+            // Fall back to deprecated API for older macOS versions
+            guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+                return false
+            }
+            
+            let jobDict = SMCopyAllJobDictionaries(kSMDomainUserLaunchd)?.takeRetainedValue() as? [[String: Any]]
+            
+            return jobDict?.contains { job in
+                guard let label = job["Label"] as? String,
+                      let onDemand = job["OnDemand"] as? Bool else {
+                    return false
+                }
+                return label == bundleIdentifier && !onDemand
+            } ?? false
+        }
+    }
+    
+    private func registerLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            print("Failed to get bundle identifier for login item registration")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use modern SMAppService API for macOS 13+
+            let service = SMAppService.mainApp
+            do {
+                try service.register()
+                settings.shouldStartAtLogin = true
+                print("Successfully registered login item with SMAppService")
+            } catch {
+                print("Failed to register login item with SMAppService: \(error)")
+                showLoginItemError(isRegistering: true)
+            }
+        } else {
+            // Fall back to deprecated API for older macOS versions
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, true)
+            if success {
+                settings.shouldStartAtLogin = true
+                print("Successfully registered login item with legacy API")
+            } else {
+                print("Failed to register login item with legacy API")
+                showLoginItemError(isRegistering: true)
+            }
+        }
+    }
+    
+    private func unregisterLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            print("Failed to get bundle identifier for login item unregistration")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use modern SMAppService API for macOS 13+
+            let service = SMAppService.mainApp
+            do {
+                try service.unregister()
+                settings.shouldStartAtLogin = false
+                print("Successfully unregistered login item with SMAppService")
+            } catch {
+                print("Failed to unregister login item with SMAppService: \(error)")
+                showLoginItemError(isRegistering: false)
+            }
+        } else {
+            // Fall back to deprecated API for older macOS versions
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, false)
+            if success {
+                settings.shouldStartAtLogin = false
+                print("Successfully unregistered login item with legacy API")
+            } else {
+                print("Failed to unregister login item with legacy API")
+                showLoginItemError(isRegistering: false)
+            }
+        }
+    }
+    
+    private func showLoginItemError(isRegistering: Bool) {
+        let alert = NSAlert()
+        alert.messageText = "Login Item Error"
+        alert.informativeText = isRegistering 
+            ? "Failed to add Sony Recorder Helper to login items. You may need to grant permission in System Preferences > Privacy & Security > Login Items."
+            : "Failed to remove Sony Recorder Helper from login items. You can manually remove it in System Preferences > Privacy & Security > Login Items."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
 
