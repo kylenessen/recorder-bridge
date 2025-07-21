@@ -21,6 +21,7 @@ class DeviceMonitor {
     private var connectedDevices: [String: DetectedDevice] = [:]
     private let settings = Settings()
     private let fileScanner = FileScanner()
+    private let fileTransferEngine = FileTransferEngine()
     
     func startMonitoring() {
         guard session == nil else { return }
@@ -39,6 +40,7 @@ class DeviceMonitor {
         DASessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         
         fileScanner.delegate = self
+        fileTransferEngine.delegate = self
         
         print("Device monitoring started")
     }
@@ -172,7 +174,7 @@ extension DeviceMonitor: FileScannerDelegate {
         if !files.isEmpty {
             let content = UNMutableNotificationContent()
             content.title = "Audio Files Found"
-            content.body = "Found \(files.count) audio files on '\(device.volumeName)'"
+            content.body = "Found \(files.count) audio files on '\(device.volumeName)'. Starting transfer..."
             content.sound = .default
             
             let request = UNNotificationRequest(
@@ -184,6 +186,27 @@ extension DeviceMonitor: FileScannerDelegate {
             UNUserNotificationCenter.current().add(request) { error in
                 if let error = error {
                     print("Failed to send files found notification: \(error)")
+                }
+            }
+            
+            Task {
+                let _ = await fileTransferEngine.transferFiles(files, from: device)
+            }
+        } else {
+            let content = UNMutableNotificationContent()
+            content.title = "No Audio Files"
+            content.body = "No audio files found on '\(device.volumeName)'"
+            content.sound = .default
+            
+            let request = UNNotificationRequest(
+                identifier: "no-files-\(device.deviceIdentifier)",
+                content: content,
+                trigger: nil
+            )
+            
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Failed to send no files notification: \(error)")
                 }
             }
         }
@@ -212,5 +235,82 @@ extension DeviceMonitor: FileScannerDelegate {
         }
         
         delegate?.deviceScanDidFail(device, error: error)
+    }
+}
+
+extension DeviceMonitor: FileTransferEngineDelegate {
+    func transferDidStart(for device: DetectedDevice, totalFiles: Int) {
+        print("Transfer started for \(device.volumeName): \(totalFiles) files")
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Transfer Started"
+        content.body = "Transferring \(totalFiles) files from '\(device.volumeName)'"
+        content.sound = .default
+        
+        let request = UNNotificationRequest(
+            identifier: "transfer-started-\(device.deviceIdentifier)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send transfer started notification: \(error)")
+            }
+        }
+    }
+    
+    func transferDidProgress(for device: DetectedDevice, currentFile: Int, totalFiles: Int, fileName: String) {
+        print("Transfer progress for \(device.volumeName): \(currentFile)/\(totalFiles) - \(fileName)")
+    }
+    
+    func transferDidComplete(for device: DetectedDevice, result: TransferResult) {
+        print("Transfer completed for \(device.volumeName): \(result.transferredCount) files transferred, success: \(result.success)")
+        
+        let content = UNMutableNotificationContent()
+        
+        if result.success {
+            content.title = "Transfer Complete"
+            content.body = "Successfully transferred \(result.transferredCount) files from '\(device.volumeName)'"
+            content.sound = .default
+        } else {
+            content.title = "Transfer Completed with Errors"
+            let errorCount = result.errors.count
+            content.body = "Transferred \(result.transferredCount) files from '\(device.volumeName)' with \(errorCount) errors"
+            content.sound = .default
+        }
+        
+        let request = UNNotificationRequest(
+            identifier: "transfer-complete-\(device.deviceIdentifier)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send transfer complete notification: \(error)")
+            }
+        }
+    }
+    
+    func transferDidFail(for device: DetectedDevice, error: TransferError) {
+        print("Transfer failed for \(device.volumeName): \(error.localizedDescription)")
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Transfer Failed"
+        content.body = "Transfer from '\(device.volumeName)' failed: \(error.localizedDescription)"
+        content.sound = .default
+        
+        let request = UNNotificationRequest(
+            identifier: "transfer-failed-\(device.deviceIdentifier)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send transfer failed notification: \(error)")
+            }
+        }
     }
 }
