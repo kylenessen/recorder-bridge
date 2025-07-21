@@ -1,20 +1,24 @@
 import Cocoa
+import UserNotifications
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     private var statusBarItem: NSStatusItem!
     private let settings = Settings()
+    private var deviceMonitor: DeviceMonitor!
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
+        setupDeviceMonitoring()
+        requestNotificationPermissions()
         updateMenu()
         
         NSApp.setActivationPolicy(.accessory)
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
-        
+        deviceMonitor.stopMonitoring()
     }
     
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -110,7 +114,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         newMenu.addItem(NSMenuItem.separator())
         
-        let statusText = settings.isConfigurationValid() ? "Status: Ready" : "Status: Configuration needed"
+        let configurationValid = settings.isConfigurationValid()
+        let deviceConnected = deviceMonitor?.isDeviceConnected() ?? false
+        
+        let statusText: String
+        if !configurationValid {
+            statusText = "Status: Configuration needed"
+        } else if deviceConnected {
+            let devices = deviceMonitor?.getConnectedDevices() ?? []
+            if devices.count == 1 {
+                statusText = "Status: Device connected (\(devices[0].volumeName))"
+            } else {
+                statusText = "Status: \(devices.count) devices connected"
+            }
+        } else {
+            statusText = "Status: Ready - waiting for device"
+        }
+        
         let statusItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         newMenu.addItem(statusItem)
@@ -121,5 +141,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         newMenu.addItem(quitItem)
         
         statusBarItem.menu = newMenu
+    }
+    
+    private func setupDeviceMonitoring() {
+        deviceMonitor = DeviceMonitor()
+        deviceMonitor.delegate = self
+        deviceMonitor.startMonitoring()
+    }
+    
+    private func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("Failed to request notification permissions: \(error)")
+            } else if granted {
+                print("Notification permissions granted")
+            } else {
+                print("Notification permissions denied")
+            }
+        }
+    }
+}
+
+extension AppDelegate: DeviceMonitorDelegate {
+    func deviceDidConnect(_ device: DetectedDevice) {
+        DispatchQueue.main.async {
+            self.updateMenu()
+            print("Device connected delegate called: \(device.volumeName)")
+        }
+    }
+    
+    func deviceDidDisconnect(_ device: DetectedDevice) {
+        DispatchQueue.main.async {
+            self.updateMenu()
+            print("Device disconnected delegate called: \(device.volumeName)")
+        }
     }
 }
