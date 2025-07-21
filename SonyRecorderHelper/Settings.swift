@@ -27,6 +27,48 @@ class Settings {
     func validateSettings() -> [String] {
         var errors: [String] = []
         
+        if let inboxPath = inboxFolder {
+            let inboxURL = URL(fileURLWithPath: inboxPath)
+            
+            if !FileManager.default.fileExists(atPath: inboxPath) {
+                errors.append("Inbox folder does not exist: \(inboxPath)")
+            } else {
+                if !FileManager.default.isWritableFile(atPath: inboxPath) {
+                    errors.append("Inbox folder is not writable: \(inboxPath)")
+                }
+            }
+        } else {
+            errors.append("No inbox folder configured")
+        }
+        
+        if deviceNames.isEmpty {
+            errors.append("No device names configured")
+        } else {
+            for deviceName in deviceNames {
+                if deviceName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    errors.append("Device name cannot be empty")
+                }
+            }
+        }
+        
         return errors
+    }
+    
+    func isConfigurationValid() -> Bool {
+        return validateSettings().isEmpty
+    }
+    
+    func getInboxFolderDisplayName() -> String {
+        if let inboxPath = inboxFolder {
+            return URL(fileURLWithPath: inboxPath).lastPathComponent
+        }
+        return "Not set"
+    }
+    
+    func getDeviceNamesDisplayString() -> String {
+        if deviceNames.isEmpty {
+            return "None configured"
+        }
+        return deviceNames.joined(separator: ", ")
     }
 }
