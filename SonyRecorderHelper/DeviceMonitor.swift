@@ -5,6 +5,8 @@ import UserNotifications
 protocol DeviceMonitorDelegate: AnyObject {
     func deviceDidConnect(_ device: DetectedDevice)
     func deviceDidDisconnect(_ device: DetectedDevice)
+    func deviceScanDidComplete(_ device: DetectedDevice, files: [AudioFile])
+    func deviceScanDidFail(_ device: DetectedDevice, error: FileScannerError)
 }
 
 struct DetectedDevice {
@@ -18,6 +20,7 @@ class DeviceMonitor {
     private var session: DASession?
     private var connectedDevices: [String: DetectedDevice] = [:]
     private let settings = Settings()
+    private let fileScanner = FileScanner()
     
     func startMonitoring() {
         guard session == nil else { return }
@@ -35,6 +38,8 @@ class DeviceMonitor {
         
         DASessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         
+        fileScanner.delegate = self
+        
         print("Device monitoring started")
     }
     
@@ -44,6 +49,7 @@ class DeviceMonitor {
         DASessionUnscheduleFromRunLoop(session, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         self.session = nil
         connectedDevices.removeAll()
+        fileScanner.stopScanning()
         
         print("Device monitoring stopped")
     }
@@ -74,6 +80,8 @@ class DeviceMonitor {
             
             sendDeviceDetectedNotification(device: device)
             delegate?.deviceDidConnect(device)
+            
+            fileScanner.scanDevice(device)
         }
     }
     
@@ -151,4 +159,58 @@ private func diskDisappearedCallback(disk: DADisk, context: UnsafeMutableRawPoin
     guard let context = context else { return }
     let monitor = Unmanaged<DeviceMonitor>.fromOpaque(context).takeUnretainedValue()
     monitor.handleDiskDisappeared(disk)
+}
+
+extension DeviceMonitor: FileScannerDelegate {
+    func scanDidStart(for device: DetectedDevice) {
+        print("Started scanning device: \(device.volumeName)")
+    }
+    
+    func scanDidComplete(for device: DetectedDevice, files: [AudioFile]) {
+        print("Scan completed for \(device.volumeName): found \(files.count) audio files")
+        
+        if !files.isEmpty {
+            let content = UNMutableNotificationContent()
+            content.title = "Audio Files Found"
+            content.body = "Found \(files.count) audio files on '\(device.volumeName)'"
+            content.sound = .default
+            
+            let request = UNNotificationRequest(
+                identifier: "files-found-\(device.deviceIdentifier)",
+                content: content,
+                trigger: nil
+            )
+            
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Failed to send files found notification: \(error)")
+                }
+            }
+        }
+        
+        delegate?.deviceScanDidComplete(device, files: files)
+    }
+    
+    func scanDidFail(for device: DetectedDevice, error: FileScannerError) {
+        print("Scan failed for \(device.volumeName): \(error.localizedDescription)")
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Scan Failed"
+        content.body = "Could not scan '\(device.volumeName)': \(error.localizedDescription)"
+        content.sound = .default
+        
+        let request = UNNotificationRequest(
+            identifier: "scan-failed-\(device.deviceIdentifier)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send scan failed notification: \(error)")
+            }
+        }
+        
+        delegate?.deviceScanDidFail(device, error: error)
+    }
 }

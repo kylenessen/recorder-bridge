@@ -87,7 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func updateMenu() {
-        guard let menu = statusBarItem.menu else { return }
+        guard statusBarItem.menu != nil else { return }
         
         let newMenu = NSMenu()
         
@@ -174,6 +174,20 @@ extension AppDelegate: DeviceMonitorDelegate {
         DispatchQueue.main.async {
             self.updateMenu()
             print("Device disconnected delegate called: \(device.volumeName)")
+        }
+    }
+    
+    func deviceScanDidComplete(_ device: DetectedDevice, files: [AudioFile]) {
+        DispatchQueue.main.async {
+            self.updateMenu()
+            print("Device scan completed: \(device.volumeName) - \(files.count) files found")
+        }
+    }
+    
+    func deviceScanDidFail(_ device: DetectedDevice, error: FileScannerError) {
+        DispatchQueue.main.async {
+            self.updateMenu()
+            print("Device scan failed: \(device.volumeName) - \(error.localizedDescription)")
         }
     }
 }

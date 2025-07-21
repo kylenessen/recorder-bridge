@@ -14,6 +14,7 @@
 		1A000000A000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000B000000000000001 /* NotificationManager.swift */; };
 		1A000000C000000000000001 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000D000000000000001 /* Settings.swift */; };
 		1A000000E000000000000001 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000F000000000000001 /* Logger.swift */; };
+		1A0000110000000000000001 /* FileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000120000000000000001 /* FileScanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		1A000000B000000000000001 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		1A000000D000000000000001 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		1A000000F000000000000001 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		1A0000120000000000000001 /* FileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileScanner.swift; sourceTree = "<group>"; };
 		1A1111110000000000000001 /* SonyRecorderHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SonyRecorderHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -57,6 +59,7 @@
 				1A000000B000000000000001 /* NotificationManager.swift */,
 				1A000000D000000000000001 /* Settings.swift */,
 				1A000000F000000000000001 /* Logger.swift */,
+				1A0000120000000000000001 /* FileScanner.swift */,
 				1A0000020000000000000001 /* Assets.xcassets */,
 				1A0000040000000000000001 /* Info.plist */,
 				1A0000050000000000000001 /* SonyRecorderHelper.entitlements */,
@@ -150,6 +153,7 @@
 				1A000000A000000000000001 /* NotificationManager.swift in Sources */,
 				1A000000C000000000000001 /* Settings.swift in Sources */,
 				1A000000E000000000000001 /* Logger.swift in Sources */,
+				1A0000110000000000000001 /* FileScanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

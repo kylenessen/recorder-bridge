@@ -28,7 +28,7 @@ class Settings {
         var errors: [String] = []
         
         if let inboxPath = inboxFolder {
-            let inboxURL = URL(fileURLWithPath: inboxPath)
+            _ = URL(fileURLWithPath: inboxPath)
             
             if !FileManager.default.fileExists(atPath: inboxPath) {
                 errors.append("Inbox folder does not exist: \(inboxPath)")
