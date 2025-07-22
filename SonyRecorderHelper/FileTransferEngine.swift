@@ -46,7 +46,7 @@ class FileTransferEngine {
             await MainActor.run {
                 delegate?.transferDidFail(for: device, error: error)
             }
-            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription])
+            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription], summary: "Transfer cancelled - already in progress")
         }
         
         isTransferring = true
@@ -61,7 +61,7 @@ class FileTransferEngine {
             await MainActor.run {
                 delegate?.transferDidFail(for: device, error: error)
             }
-            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription])
+            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription], summary: "No inbox folder configured")
         }
         
         let inboxURL = URL(fileURLWithPath: inboxPath)
@@ -70,7 +70,7 @@ class FileTransferEngine {
             await MainActor.run {
                 delegate?.transferDidFail(for: device, error: error)
             }
-            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription])
+            return TransferResult(success: false, transferredCount: 0, errors: [error.localizedDescription], summary: "Inbox folder not accessible")
         }
         
         await MainActor.run {
@@ -105,40 +105,85 @@ class FileTransferEngine {
             }
         }
         
-        let result = TransferResult(
-            success: errors.isEmpty && transferredCount > 0,
+        let finalResult = await finalizeTransfer(
+            device: device,
+            totalFiles: audioFiles.count,
             transferredCount: transferredCount,
             errors: errors
         )
         
         await MainActor.run {
-            delegate?.transferDidComplete(for: device, result: result)
+            delegate?.transferDidComplete(for: device, result: finalResult)
         }
         
-        return result
+        return finalResult
     }
     
     private func transferSingleFile(_ audioFile: AudioFile, to inboxURL: URL) async throws -> Bool {
         let sourceURL = URL(fileURLWithPath: audioFile.path)
         let destinationURL = generateDestinationURL(for: audioFile.name, in: inboxURL)
         
-        let success = try await copyFile(from: sourceURL, to: destinationURL)
-        guard success else {
-            throw TransferError.copyFailed(audioFile.name, "Copy operation failed")
+        return try await performTransferWithRecovery(sourceURL: sourceURL, destinationURL: destinationURL, fileName: audioFile.name)
+    }
+    
+    private func performTransferWithRecovery(sourceURL: URL, destinationURL: URL, fileName: String) async throws -> Bool {
+        var copySuccess = false
+        var verificationSuccess = false
+        
+        do {
+            copySuccess = try await copyFile(from: sourceURL, to: destinationURL)
+            guard copySuccess else {
+                throw TransferError.copyFailed(fileName, "Copy operation failed")
+            }
+            
+            verificationSuccess = try await verifyFile(original: sourceURL, copy: destinationURL)
+            guard verificationSuccess else {
+                cleanupFailedTransfer(at: destinationURL)
+                throw TransferError.verificationFailed(fileName)
+            }
+            
+            let deleted = deleteOriginalFile(at: sourceURL)
+            guard deleted else {
+                print("Warning: File copied and verified but original could not be deleted: \(fileName)")
+                throw TransferError.deletionFailed(fileName)
+            }
+            
+            return true
+            
+        } catch {
+            handleTransferError(sourceURL: sourceURL, destinationURL: destinationURL, fileName: fileName, error: error, copySuccess: copySuccess, verificationSuccess: verificationSuccess)
+            throw error
+        }
+    }
+    
+    private func handleTransferError(sourceURL: URL, destinationURL: URL, fileName: String, error: Error, copySuccess: Bool, verificationSuccess: Bool) {
+        print("=== Transfer Error Recovery for \(fileName) ===")
+        print("Error: \(error.localizedDescription)")
+        print("Copy successful: \(copySuccess)")
+        print("Verification successful: \(verificationSuccess)")
+        
+        if copySuccess && !verificationSuccess {
+            print("Cleaning up corrupted copy at destination")
+            cleanupFailedTransfer(at: destinationURL)
+        } else if copySuccess && verificationSuccess {
+            print("Copy and verification succeeded but deletion failed - file remains on both devices")
+            print("Source: \(sourceURL.path)")
+            print("Destination: \(destinationURL.path)")
         }
         
-        let verified = try await verifyFile(original: sourceURL, copy: destinationURL)
-        guard verified else {
-            try? FileManager.default.removeItem(at: destinationURL)
-            throw TransferError.verificationFailed(audioFile.name)
+        print("Original file preserved at: \(sourceURL.path)")
+        print("=======================================")
+    }
+    
+    private func cleanupFailedTransfer(at url: URL) {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+                print("Cleaned up failed transfer file: \(url.lastPathComponent)")
+            }
+        } catch {
+            print("Warning: Could not clean up failed transfer file \(url.lastPathComponent): \(error)")
         }
-        
-        let deleted = deleteOriginalFile(at: sourceURL)
-        guard deleted else {
-            throw TransferError.deletionFailed(audioFile.name)
-        }
-        
-        return true
     }
     
     private func generateDestinationURL(for fileName: String, in inboxURL: URL) -> URL {
@@ -217,10 +262,148 @@ class FileTransferEngine {
     var isTransferInProgress: Bool {
         return isTransferring
     }
+    
+    private func performResourceCleanup(device: DetectedDevice) async {
+        print("=== Performing Resource Cleanup for \(device.volumeName) ===")
+        
+        await cleanupTemporaryFiles()
+        
+        await syncFileSystem()
+        
+        await verifyDeviceReadiness(device: device)
+        
+        print("Resource cleanup completed")
+        print("=====================================")
+    }
+    
+    private func cleanupTemporaryFiles() async {
+        guard let inboxPath = settings.inboxFolder else { return }
+        
+        let inboxURL = URL(fileURLWithPath: inboxPath)
+        let tempFilePatterns = ["*.tmp", "*.partial", "*~"]
+        
+        do {
+            let inboxContents = try FileManager.default.contentsOfDirectory(at: inboxURL, includingPropertiesForKeys: nil, options: [])
+            
+            for url in inboxContents {
+                let fileName = url.lastPathComponent
+                let shouldRemove = tempFilePatterns.contains { pattern in
+                    let regex = pattern.replacingOccurrences(of: "*", with: ".*")
+                    return fileName.range(of: regex, options: .regularExpression) != nil
+                }
+                
+                if shouldRemove {
+                    do {
+                        try FileManager.default.removeItem(at: url)
+                        print("Cleaned up temporary file: \(fileName)")
+                    } catch {
+                        print("Could not remove temporary file \(fileName): \(error)")
+                    }
+                }
+            }
+        } catch {
+            print("Could not scan inbox for temporary files: \(error)")
+        }
+    }
+    
+    private func syncFileSystem() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                sync()
+                print("File system sync completed")
+                continuation.resume()
+            }
+        }
+    }
+    
+    private func verifyDeviceReadiness(device: DetectedDevice) async {
+        let deviceURL = URL(fileURLWithPath: device.volumePath)
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: deviceURL.path)
+            if let _ = attributes[.size] {
+                print("Device \(device.volumeName) is ready for ejection")
+            }
+        } catch {
+            print("Warning: Could not verify device readiness: \(error)")
+        }
+        
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        print("Device stabilization period completed")
+    }
+    
+    private func finalizeTransfer(device: DetectedDevice, totalFiles: Int, transferredCount: Int, errors: [String]) async -> TransferResult {
+        print("=== Transfer Summary for \(device.volumeName) ===")
+        print("Total files to transfer: \(totalFiles)")
+        print("Successfully transferred: \(transferredCount)")
+        print("Failed transfers: \(errors.count)")
+        
+        if !errors.isEmpty {
+            print("Errors encountered:")
+            for (index, error) in errors.enumerated() {
+                print("  \(index + 1). \(error)")
+            }
+        }
+        
+        let success = errors.isEmpty && transferredCount > 0
+        print("Transfer result: \(success ? "SUCCESS" : "FAILED")")
+        print("=====================================")
+        
+        if success {
+            await performFinalVerification(device: device, transferredCount: transferredCount)
+            await performResourceCleanup(device: device)
+        }
+        
+        return TransferResult(
+            success: success,
+            transferredCount: transferredCount,
+            errors: errors,
+            summary: generateTransferSummary(totalFiles: totalFiles, transferredCount: transferredCount, errors: errors)
+        )
+    }
+    
+    private func performFinalVerification(device: DetectedDevice, transferredCount: Int) async {
+        guard let inboxPath = settings.inboxFolder else { return }
+        
+        let inboxURL = URL(fileURLWithPath: inboxPath)
+        do {
+            let inboxContents = try FileManager.default.contentsOfDirectory(at: inboxURL, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey], options: [])
+            let recentFiles = inboxContents.filter { url in
+                do {
+                    let resourceValues = try url.resourceValues(forKeys: [.creationDateKey])
+                    if let creationDate = resourceValues.creationDate {
+                        return Date().timeIntervalSince(creationDate) < 300
+                    }
+                } catch {
+                    print("Could not get creation date for \(url.lastPathComponent): \(error)")
+                }
+                return false
+            }
+            
+            if recentFiles.count >= transferredCount {
+                print("Final verification: Found \(recentFiles.count) recently created files in inbox")
+            } else {
+                print("Final verification warning: Expected \(transferredCount) files, found \(recentFiles.count) recent files")
+            }
+        } catch {
+            print("Final verification failed: Could not read inbox contents: \(error)")
+        }
+    }
+    
+    private func generateTransferSummary(totalFiles: Int, transferredCount: Int, errors: [String]) -> String {
+        if errors.isEmpty && transferredCount > 0 {
+            return "Successfully transferred \(transferredCount) of \(totalFiles) files"
+        } else if transferredCount > 0 {
+            return "Transferred \(transferredCount) of \(totalFiles) files with \(errors.count) errors"
+        } else {
+            return "Transfer failed - no files were transferred"
+        }
+    }
 }
 
 struct TransferResult {
     let success: Bool
     let transferredCount: Int
     let errors: [String]
+    let summary: String
 }

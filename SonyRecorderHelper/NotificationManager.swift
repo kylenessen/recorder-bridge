@@ -11,6 +11,8 @@ enum NotificationCategory {
     case transferProgress
     case transferCompleted
     case transferFailed
+    case deviceEjected
+    case deviceEjectionFailed
     case error
 }
 
@@ -129,6 +131,25 @@ class NotificationManager: NSObject {
         } else {
             sendNotification(title: title, body: body, identifier: identifier, category: category)
         }
+    }
+    
+    func sendEjectionNotification(device: DetectedDevice, success: Bool, error: String? = nil) {
+        let title: String
+        let body: String
+        let category: NotificationCategory
+        
+        if success {
+            title = "Device Ejected"
+            body = "'\(device.volumeName)' has been safely ejected and can be disconnected"
+            category = .deviceEjected
+        } else {
+            title = "Ejection Failed"
+            body = "Could not eject '\(device.volumeName)': \(error ?? "Unknown error")"
+            category = .deviceEjectionFailed
+        }
+        
+        let identifier = "\(category)-\(device.deviceIdentifier)"
+        sendNotification(title: title, body: body, identifier: identifier, category: category)
     }
     
     func sendErrorNotification(title: String, message: String) {

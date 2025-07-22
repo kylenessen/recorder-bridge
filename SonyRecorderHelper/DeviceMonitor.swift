@@ -113,6 +113,38 @@ class DeviceMonitor {
     func isDeviceConnected() -> Bool {
         return !connectedDevices.isEmpty
     }
+    
+    func ejectDevice(_ device: DetectedDevice) {
+        guard let session = session else {
+            print("Cannot eject device: no DiskArbitration session")
+            return
+        }
+        
+        let deviceURL = URL(fileURLWithPath: device.volumePath)
+        guard let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, deviceURL as CFURL) else {
+            print("Cannot create disk reference for ejection: \(device.volumePath)")
+            return
+        }
+        
+        print("Attempting to eject device: \(device.volumeName)")
+        
+        let context = EjectionContext(deviceMonitor: self, device: device)
+        let contextPointer = Unmanaged.passRetained(context).toOpaque()
+        
+        DADiskEject(disk, DADiskEjectOptions(kDADiskEjectOptionDefault), ejectionCallback, contextPointer)
+    }
+    
+    fileprivate func handleEjectionComplete(for device: DetectedDevice, success: Bool, errorMessage: String?) {
+        if success {
+            print("Successfully ejected device: \(device.volumeName)")
+            notificationManager.sendEjectionNotification(device: device, success: true)
+            connectedDevices.removeValue(forKey: device.deviceIdentifier)
+        } else {
+            let message = errorMessage ?? "Unknown error"
+            print("Failed to eject device \(device.volumeName): \(message)")
+            notificationManager.sendEjectionNotification(device: device, success: false, error: message)
+        }
+    }
 }
 
 private func diskAppearedCallback(disk: DADisk, context: UnsafeMutableRawPointer?) {
@@ -125,6 +157,30 @@ private func diskDisappearedCallback(disk: DADisk, context: UnsafeMutableRawPoin
     guard let context = context else { return }
     let monitor = Unmanaged<DeviceMonitor>.fromOpaque(context).takeUnretainedValue()
     monitor.handleDiskDisappeared(disk)
+}
+
+private class EjectionContext {
+    let deviceMonitor: DeviceMonitor
+    let device: DetectedDevice
+    
+    init(deviceMonitor: DeviceMonitor, device: DetectedDevice) {
+        self.deviceMonitor = deviceMonitor
+        self.device = device
+    }
+}
+
+private func ejectionCallback(disk: DADisk, dissenter: DADissenter?, context: UnsafeMutableRawPointer?) {
+    guard let context = context else { return }
+    
+    let ejectionContext = Unmanaged<EjectionContext>.fromOpaque(context).takeRetainedValue()
+    
+    if let dissenter = dissenter {
+        let status = DADissenterGetStatus(dissenter)
+        let errorMessage = "Ejection failed with status: \(status)"
+        ejectionContext.deviceMonitor.handleEjectionComplete(for: ejectionContext.device, success: false, errorMessage: errorMessage)
+    } else {
+        ejectionContext.deviceMonitor.handleEjectionComplete(for: ejectionContext.device, success: true, errorMessage: nil)
+    }
 }
 
 extension DeviceMonitor: FileScannerDelegate {
@@ -170,6 +226,10 @@ extension DeviceMonitor: FileTransferEngineDelegate {
     func transferDidComplete(for device: DetectedDevice, result: TransferResult) {
         print("Transfer completed for \(device.volumeName): \(result.transferredCount) files transferred, success: \(result.success)")
         notificationManager.sendTransferNotification(device: device, status: "completed", result: result)
+        
+        if result.success && result.transferredCount > 0 {
+            ejectDevice(device)
+        }
     }
     
     func transferDidFail(for device: DetectedDevice, error: TransferError) {
