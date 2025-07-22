@@ -15,6 +15,7 @@
 		1A000000C000000000000001 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000D000000000000001 /* Settings.swift */; };
 		1A000000E000000000000001 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000F000000000000001 /* Logger.swift */; };
 		1A0000110000000000000001 /* FileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000120000000000000001 /* FileScanner.swift */; };
+		1A0000130000000000000001 /* VersionChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000140000000000000001 /* VersionChecker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		1A000000D000000000000001 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		1A000000F000000000000001 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		1A0000120000000000000001 /* FileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileScanner.swift; sourceTree = "<group>"; };
+		1A0000140000000000000001 /* VersionChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionChecker.swift; sourceTree = "<group>"; };
 		1A1111110000000000000001 /* SonyRecorderHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SonyRecorderHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -60,6 +62,7 @@
 				1A000000D000000000000001 /* Settings.swift */,
 				1A000000F000000000000001 /* Logger.swift */,
 				1A0000120000000000000001 /* FileScanner.swift */,
+				1A0000140000000000000001 /* VersionChecker.swift */,
 				1A0000020000000000000001 /* Assets.xcassets */,
 				1A0000040000000000000001 /* Info.plist */,
 				1A0000050000000000000001 /* SonyRecorderHelper.entitlements */,
@@ -154,6 +157,7 @@
 				1A000000C000000000000001 /* Settings.swift in Sources */,
 				1A000000E000000000000001 /* Logger.swift in Sources */,
 				1A0000110000000000000001 /* FileScanner.swift in Sources */,
+				1A0000130000000000000001 /* VersionChecker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -284,7 +288,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SonyRecorderHelper/SonyRecorderHelper.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -309,7 +316,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SonyRecorderHelper/SonyRecorderHelper.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;

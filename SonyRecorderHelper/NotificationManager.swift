@@ -157,6 +157,11 @@ class NotificationManager: NSObject {
         sendNotification(title: title, body: message, identifier: identifier, category: .error)
     }
     
+    func showUpdateNotification(title: String, message: String) {
+        let identifier = "update-\(Date().timeIntervalSince1970)"
+        sendNotification(title: title, body: message, identifier: identifier, category: .error, sound: false)
+    }
+    
     private func sendNotification(title: String, body: String, identifier: String, category: NotificationCategory, sound: Bool = true) {
         guard permissionsGranted else {
             print("Notification not sent - permissions not granted: \(title)")

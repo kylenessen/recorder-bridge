@@ -9,12 +9,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings()
     private var deviceMonitor: DeviceMonitor!
     private var terminationObserver: NSObjectProtocol?
+    private let versionChecker = VersionChecker()
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         setupStatusBar()
         setupDeviceMonitoring()
         requestNotificationPermissions()
         setupLaunchAndPersistence()
+        versionChecker.checkVersionOnStartup()
         updateMenu()
         
         NSApp.setActivationPolicy(.accessory)
@@ -76,6 +78,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateMenu()
             print("Device names set to: \(textField.stringValue)")
         }
+    }
+    
+    @objc private func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "Sony Recorder Helper"
+        alert.informativeText = """
+        Version \(versionChecker.fullVersionString)
+        
+        Automatically transfers audio files from Sony IC Recorders to your designated inbox folder.
+        
+        • Monitors for connected Sony IC Recorder devices
+        • Transfers MP3 and LPCM audio files
+        • Verifies file integrity before cleanup
+        • Runs continuously in the background
+        
+        System Requirements:
+        • macOS 15.0 or later
+        • Full Disk Access permission
+        
+        Copyright © 2025. All rights reserved.
+        """
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     private func validateAndShowErrors() {
@@ -144,6 +169,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let loginItemsItem = NSMenuItem(title: getLoginItemsMenuTitle(), action: #selector(toggleLoginItem), keyEquivalent: "")
         loginItemsItem.target = self
         newMenu.addItem(loginItemsItem)
+        
+        newMenu.addItem(NSMenuItem.separator())
+        
+        let aboutItem = NSMenuItem(title: "About Sony Recorder Helper", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        newMenu.addItem(aboutItem)
         
         newMenu.addItem(NSMenuItem.separator())
         
